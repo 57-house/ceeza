@@ -1,5 +1,6 @@
 import { v4 as uuidv4 } from 'uuid';
 import { getDB } from '../db/database';
+import { pushLocalSync } from '../sync/syncBridge';
 import { MenuItem, MenuCategory } from '../types/menu';
 
 export const menuService = {
@@ -20,7 +21,7 @@ export const menuService = {
         VALUES ('${id}', '${name.replace(/'/g, "''")}', '${description.replace(/'/g, "''")}', '${category}', ${price}, 1, ${now}, ${now})
       `);
 
-      return {
+      const item = {
         id,
         name,
         description,
@@ -30,6 +31,8 @@ export const menuService = {
         created_at: now,
         updated_at: now,
       };
+      pushLocalSync({ type: 'MENU_SYNC', item });
+      return item;
     } catch (error) {
       console.error('Erreur dans addMenuItem:', error);
       throw error;
@@ -46,7 +49,7 @@ export const menuService = {
       );
       return (result || []).map((item) => ({
         ...item,
-        available: item.available === 1,
+        available: Number(item.available) === 1,
       }));
     } catch (error) {
       console.error('Erreur dans getAllMenuItems:', error);
@@ -64,7 +67,7 @@ export const menuService = {
       );
       return (result || []).map((item) => ({
         ...item,
-        available: item.available === 1,
+        available: Number(item.available) === 1,
       }));
     } catch (error) {
       console.error('Erreur dans getMenuItemsByCategory:', error);
@@ -83,7 +86,7 @@ export const menuService = {
       if (!result) return null;
       return {
         ...result,
-        available: result.available === 1,
+        available: Number(result.available) === 1,
       };
     } catch (error) {
       console.error('Erreur dans getMenuItemById:', error);
@@ -112,6 +115,8 @@ export const menuService = {
             updated_at = ${Date.now()}
         WHERE id = '${id}'
       `);
+      const updated = menuService.getMenuItemById(id);
+      if (updated) pushLocalSync({ type: 'MENU_SYNC', item: updated });
     } catch (error) {
       console.error('Erreur dans updateMenuItem:', error);
       throw error;
@@ -131,6 +136,8 @@ export const menuService = {
             updated_at = ${Date.now()}
         WHERE id = '${id}'
       `);
+      const updated = menuService.getMenuItemById(id);
+      if (updated) pushLocalSync({ type: 'MENU_SYNC', item: updated });
     } catch (error) {
       console.error('Erreur dans toggleAvailability:', error);
       throw error;
@@ -142,6 +149,7 @@ export const menuService = {
     const db = getDB();
     try {
       db.execSync(`DELETE FROM menu_items WHERE id = '${id}'`);
+      pushLocalSync({ type: 'MENU_DELETE', id });
     } catch (error) {
       console.error('Erreur dans deleteMenuItem:', error);
       throw error;

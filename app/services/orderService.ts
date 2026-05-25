@@ -1,8 +1,14 @@
 import { v4 as uuidv4 } from 'uuid';
 import { getDB } from '../db/database';
+import { pushLocalSync } from '../sync/syncBridge';
 import { Order, OrderItem, OrderStatus } from '../types/order';
 import { MenuItem } from '../types/menu';
 import { tableService } from './tableService';
+
+function syncOrder(orderId: string): void {
+  const order = orderService.getOrderById(orderId);
+  if (order) pushLocalSync({ type: 'ORDER_SYNC', order });
+}
 
 export const orderService = {
   // Créer une nouvelle commande
@@ -20,16 +26,18 @@ export const orderService = {
       // Mettre à jour le statut de la table
       tableService.updateTableStatus(tableId, 'OCCUPIED');
 
-      return {
+      const order = {
         id,
         table_id: tableId,
         table_number: tableNumber,
-        status: 'OPEN',
+        status: 'OPEN' as OrderStatus,
         items: [],
         total: 0,
         created_at: now,
         updated_at: now,
       };
+      pushLocalSync({ type: 'ORDER_SYNC', order });
+      return order;
     } catch (error) {
       console.error('Erreur dans createOrder:', error);
       throw error;
@@ -105,6 +113,98 @@ export const orderService = {
     }
   },
 
+  /** Commande active sur une table (ouverte ou en cuisine) */
+  getActiveOrderByTable: (tableId: string): Order | null => {
+    const db = getDB();
+    try {
+      const orders = db.getAllSync<{
+        id: string;
+        table_id: string;
+        table_number: number;
+        status: string;
+        total: number;
+        created_at: number;
+        updated_at: number;
+      }>(
+        "SELECT * FROM orders WHERE table_id = ? AND status IN ('OPEN', 'PREPARING') ORDER BY created_at DESC",
+        [tableId]
+      );
+
+      if (!orders.length) return null;
+
+      return orderService.getOrderById(orders[0].id);
+    } catch (error) {
+      console.error('Erreur dans getActiveOrderByTable:', error);
+      return null;
+    }
+  },
+
+  getOrdersByStatus: (status: OrderStatus): Order[] => {
+    const db = getDB();
+    try {
+      const rows = db.getAllSync<{
+        id: string;
+        table_id: string;
+        table_number: number;
+        status: string;
+        total: number;
+        created_at: number;
+        updated_at: number;
+      }>('SELECT * FROM orders WHERE status = ? ORDER BY created_at', [status]);
+
+      return rows
+        .map((row) => orderService.getOrderById(row.id))
+        .filter((o): o is Order => o !== null);
+    } catch (error) {
+      console.error('Erreur dans getOrdersByStatus:', error);
+      return [];
+    }
+  },
+
+  completeKitchenOrder: (orderId: string): Order | null => {
+    orderService.updateOrderStatus(orderId, 'READY');
+    return orderService.getOrderById(orderId);
+  },
+
+  /** Synchronise une commande reçue du réseau (autre appareil) */
+  upsertOrderFromNetwork: (order: Order): void => {
+    const db = getDB();
+    const existing = orderService.getOrderById(order.id);
+
+    if (!existing) {
+      db.execSync(`
+        INSERT INTO orders (id, table_id, table_number, status, total, created_at, updated_at)
+        VALUES ('${order.id}', '${order.table_id}', ${order.table_number}, '${order.status}', ${order.total}, ${order.created_at}, ${order.updated_at})
+      `);
+    } else {
+      db.execSync(`
+        UPDATE orders
+        SET status = '${order.status}', total = ${order.total}, updated_at = ${order.updated_at}
+        WHERE id = '${order.id}'
+      `);
+      db.execSync(`DELETE FROM order_items WHERE order_id = '${order.id}'`);
+    }
+
+    for (const item of order.items) {
+      db.execSync(`
+        INSERT INTO order_items (id, order_id, menu_item_id, menu_item_name, category, price, quantity, parent_item_id)
+        VALUES ('${item.id}', '${order.id}', '${item.menu_item_id}', '${item.menu_item_name.replace(/'/g, "''")}', '${item.category}', ${item.price}, ${item.quantity}, NULL)
+      `);
+      for (const sup of item.supplements || []) {
+        db.execSync(`
+          INSERT INTO order_items (id, order_id, menu_item_id, menu_item_name, category, price, quantity, parent_item_id)
+          VALUES ('${sup.id}', '${order.id}', '${sup.menu_item_id}', '${sup.menu_item_name.replace(/'/g, "''")}', '${sup.category}', ${sup.price}, ${sup.quantity}, '${item.id}')
+        `);
+      }
+    }
+
+    tableService.updateTableStatus(order.table_id, 'OCCUPIED');
+  },
+
+  applyRemoteOrderStatus: (orderId: string, status: OrderStatus): void => {
+    orderService.updateOrderStatus(orderId, status);
+  },
+
   // Récupérer les items d'une commande
   getOrderItems: (orderId: string): OrderItem[] => {
     const db = getDB();
@@ -152,6 +252,7 @@ export const orderService = {
       `);
 
       orderService.updateOrderTotal(orderId);
+      syncOrder(orderId);
       return itemId;
     } catch (error) {
       console.error('Erreur dans addItemToOrder:', error);
@@ -192,6 +293,7 @@ export const orderService = {
       `);
 
       orderService.updateOrderTotal(orderId);
+      syncOrder(orderId);
     } catch (error) {
       console.error('Erreur dans removeItemFromOrder:', error);
       throw error;
@@ -207,6 +309,7 @@ export const orderService = {
         SET status = '${status}', updated_at = ${Date.now()}
         WHERE id = '${orderId}'
       `);
+      syncOrder(orderId);
     } catch (error) {
       console.error('Erreur dans updateOrderStatus:', error);
       throw error;

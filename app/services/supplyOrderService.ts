@@ -1,7 +1,13 @@
 import { v4 as uuidv4 } from 'uuid';
 import { getDB } from '../db/database';
+import { pushLocalSync } from '../sync/syncBridge';
 import { SupplyEntry, SupplyUnit } from '../types/supply';
 import { supplyItemService } from './supplyItemService';
+
+function syncSupplyOrder(orderId: string): void {
+  const order = supplyOrderService.getSupplyOrderById(orderId);
+  if (order) pushLocalSync({ type: 'SUPPLY_ORDER_SYNC', order });
+}
 
 export interface SupplyOrder {
   id: string;
@@ -25,6 +31,7 @@ export const supplyOrderService = {
         INSERT INTO supply_orders (id, date, status, created_at, updated_at)
         VALUES ('${id}', ${date}, 'PENDING', ${now}, ${now})
       `);
+      syncSupplyOrder(id);
       return id;
     } catch (error) {
       console.error('Erreur dans createSupplyOrder:', error);
@@ -49,6 +56,7 @@ export const supplyOrderService = {
         INSERT INTO supply_order_items (id, order_id, item_id, item_name, quantity, unit, cost)
         VALUES ('${entryId}', '${orderId}', '${itemId}', '${itemName.replace(/'/g, "''")}', ${quantity}, '${unit}', ${cost})
       `);
+      syncSupplyOrder(orderId);
     } catch (error) {
       console.error('Erreur dans addItemToOrder:', error);
       throw error;
@@ -79,6 +87,7 @@ export const supplyOrderService = {
         SET status = 'COMPLETED', updated_at = ${Date.now()}
         WHERE id = '${orderId}'
       `);
+      syncSupplyOrder(orderId);
     } catch (error) {
       console.error('Erreur dans completeSupplyOrder:', error);
       throw error;

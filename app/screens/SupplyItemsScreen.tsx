@@ -12,6 +12,7 @@ import {
   Keyboard,
   TouchableWithoutFeedback,
 } from 'react-native';
+import { useDatabaseReady } from '../hooks/useDatabaseReady';
 import { supplyItemService } from '../services/supplyItemService';
 import { SupplyItem, SupplyUnit, unitLabels, unitShortLabels } from '../types/supply';
 
@@ -23,14 +24,6 @@ export default function SupplyItemsScreen() {
   const [unit, setUnit] = useState<SupplyUnit>('KG');
   const [minStock, setMinStock] = useState('');
 
-  useEffect(() => {
-    // Attendre un peu pour s'assurer que la DB est prête
-    const timer = setTimeout(() => {
-      loadItems();
-    }, 100);
-    return () => clearTimeout(timer);
-  }, []);
-
   const loadItems = () => {
     try {
       const allItems = supplyItemService.getAllSupplyItems();
@@ -40,6 +33,8 @@ export default function SupplyItemsScreen() {
       Alert.alert('Erreur', 'Impossible de charger les articles');
     }
   };
+
+  useDatabaseReady(loadItems);
 
   const handleOpenModal = (item?: SupplyItem) => {
     if (item) {

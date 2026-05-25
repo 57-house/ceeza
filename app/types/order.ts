@@ -3,6 +3,15 @@ import { Table } from './table';
 
 export type OrderStatus = 'OPEN' | 'PREPARING' | 'READY' | 'SERVED' | 'PAID' | 'CANCELLED';
 
+export const orderStatusLabels: Record<OrderStatus, string> = {
+  OPEN: 'Ouverte',
+  PREPARING: 'En cuisine',
+  READY: 'Terminée',
+  SERVED: 'Servie',
+  PAID: 'Payée',
+  CANCELLED: 'Annulée',
+};
+
 export interface OrderItem {
   id: string;
   menu_item_id: string;

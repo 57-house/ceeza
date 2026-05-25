@@ -11,6 +11,8 @@ import {
   Keyboard,
   TouchableWithoutFeedback,
 } from 'react-native';
+import { useDatabaseReady } from '../hooks/useDatabaseReady';
+import { useSyncRefresh } from '../hooks/useSyncRefresh';
 import { tableService } from '../services/tableService';
 import { Table, TableStatus } from '../types/table';
 
@@ -19,14 +21,6 @@ export default function TablesScreen() {
   const [modalVisible, setModalVisible] = useState(false);
   const [tableNumber, setTableNumber] = useState('');
   const [capacity, setCapacity] = useState('');
-
-  useEffect(() => {
-    // Attendre un peu pour s'assurer que la DB est prête
-    const timer = setTimeout(() => {
-      loadTables();
-    }, 100);
-    return () => clearTimeout(timer);
-  }, []);
 
   const loadTables = () => {
     try {
@@ -39,6 +33,10 @@ export default function TablesScreen() {
       Alert.alert('Erreur', `Impossible de charger les tables: ${errorMessage}`);
     }
   };
+
+  useDatabaseReady(loadTables);
+
+  useSyncRefresh(loadTables);
 
   const handleAddTable = () => {
     const num = parseInt(tableNumber);

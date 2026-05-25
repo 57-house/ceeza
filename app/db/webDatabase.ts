@@ -91,6 +91,23 @@ interface RestaurantDBSchema extends DBSchema {
     };
     indexes: { order_id: string; parent_item_id: string };
   };
+  invoices: {
+    key: string;
+    value: {
+      id: string;
+      order_id: string;
+      invoice_number: string;
+      table_number: number;
+      subtotal: number;
+      tax_rate: number;
+      tax_amount: number;
+      total: number;
+      status: string;
+      created_at: number;
+      paid_at: number | null;
+    };
+    indexes: { order_id: string; invoice_number: string; status: string };
+  };
 }
 
 let db: IDBPDatabase<RestaurantDBSchema> | null = null;
@@ -98,8 +115,8 @@ let db: IDBPDatabase<RestaurantDBSchema> | null = null;
 export const initWebDB = async (): Promise<IDBPDatabase<RestaurantDBSchema>> => {
   if (db) return db;
 
-  db = await openDB<RestaurantDBSchema>('restaurant-db', 1, {
-    upgrade(database) {
+  db = await openDB<RestaurantDBSchema>('restaurant-db', 3, {
+    upgrade(database, oldVersion, _newVersion, transaction) {
       // Table tables
       if (!database.objectStoreNames.contains('tables')) {
         const tableStore = database.createObjectStore('tables', { keyPath: 'id' });
@@ -144,6 +161,19 @@ export const initWebDB = async (): Promise<IDBPDatabase<RestaurantDBSchema>> => 
         orderItemsStore.createIndex('order_id', 'order_id');
         orderItemsStore.createIndex('parent_item_id', 'parent_item_id');
       }
+
+      if (oldVersion < 2 && !database.objectStoreNames.contains('invoices')) {
+        const invoiceStore = database.createObjectStore('invoices', { keyPath: 'id' });
+        invoiceStore.createIndex('order_id', 'order_id', { unique: true });
+        invoiceStore.createIndex('invoice_number', 'invoice_number', { unique: true });
+        invoiceStore.createIndex('status', 'status');
+      }
+      if (oldVersion < 3 && database.objectStoreNames.contains('invoices') && transaction) {
+        const invoiceStore = transaction.objectStore('invoices');
+        if (!invoiceStore.indexNames.contains('status')) {
+          invoiceStore.createIndex('status', 'status');
+        }
+      }
     },
   });
 
@@ -163,14 +193,15 @@ const memoryCache: Map<string, any> = new Map();
 // Wrapper pour simuler l'API SQLite sur IndexedDB
 export class WebSQLiteDatabase {
   private db: IDBPDatabase<RestaurantDBSchema>;
+  private readonly cacheReady: Promise<void>;
 
   constructor(database: IDBPDatabase<RestaurantDBSchema>) {
     this.db = database;
-    // Initialiser le cache en chargeant toutes les données
-    // Note: Cette opération est asynchrone mais le cache sera rempli progressivement
-    this.initializeCache().catch(error => {
-      console.error('Erreur lors de l\'initialisation du cache:', error);
-    });
+    this.cacheReady = this.initializeCache();
+  }
+
+  whenReady(): Promise<void> {
+    return this.cacheReady;
   }
 
   private async initializeCache() {
@@ -183,6 +214,7 @@ export class WebSQLiteDatabase {
       const orderItems = await this.db.getAll('order_items');
       const supplyOrders = await this.db.getAll('supply_orders');
       const supplyOrderItems = await this.db.getAll('supply_order_items');
+      const invoices = await this.db.getAll('invoices');
 
       memoryCache.set('tables', tables);
       memoryCache.set('menu_items', menuItems);
@@ -191,6 +223,7 @@ export class WebSQLiteDatabase {
       memoryCache.set('order_items', orderItems);
       memoryCache.set('supply_orders', supplyOrders);
       memoryCache.set('supply_order_items', supplyOrderItems);
+      memoryCache.set('invoices', invoices);
     } catch (error) {
       console.error('Erreur lors de l\'initialisation du cache:', error);
     }
@@ -367,6 +400,9 @@ export class WebSQLiteDatabase {
       } else if (condition.includes('order_id =')) {
         const orderIdMatch = condition.match(/order_id\s*=\s*'([^']+)'/i);
         if (orderIdMatch && record.order_id !== orderIdMatch[1]) return false;
+      } else if (condition.includes('invoice_number =')) {
+        const numMatch = condition.match(/invoice_number\s*=\s*'([^']+)'/i);
+        if (numMatch && record.invoice_number !== numMatch[1]) return false;
       } else if (condition.includes('parent_item_id IS NULL')) {
         if (record.parent_item_id !== null && record.parent_item_id !== undefined) return false;
       } else if (condition.includes('parent_item_id IS NOT NULL')) {
@@ -493,13 +529,23 @@ export class WebSQLiteDatabase {
         if (upperQuery.includes("status = 'OPEN'")) {
           result = result.filter((item: any) => item.status === 'OPEN') as T[];
         }
+        if (upperQuery.includes("status IN ('OPEN', 'PREPARING')")) {
+          result = result.filter(
+            (item: any) => item.status === 'OPEN' || item.status === 'PREPARING'
+          ) as T[];
+        }
       } else if (upperQuery.includes('WHERE id =')) {
         const id = params[0];
         result = cache.filter((item: any) => item.id === id) as T[];
+      } else if (upperQuery.includes('WHERE status =')) {
+        const status = params[0];
+        result = cache.filter((item: any) => item.status === status) as T[];
       }
       
-      if (upperQuery.includes('ORDER BY created_at')) {
+      if (upperQuery.includes('ORDER BY created_at DESC')) {
         result.sort((a: any, b: any) => b.created_at - a.created_at);
+      } else if (upperQuery.includes('ORDER BY created_at')) {
+        result.sort((a: any, b: any) => a.created_at - b.created_at);
       }
       return result;
     } else if (upperQuery.includes('FROM ORDER_ITEMS') || upperQuery.includes('FROM order_items')) {
@@ -544,6 +590,30 @@ export class WebSQLiteDatabase {
       if (upperQuery.includes('WHERE order_id =')) {
         const orderId = params[0];
         result = cache.filter((item: any) => item.order_id === orderId) as T[];
+      }
+      return result;
+    } else if (upperQuery.includes('FROM INVOICES') || upperQuery.includes('FROM invoices')) {
+      const cache = memoryCache.get('invoices') || [];
+      let result = [...cache] as T[];
+
+      if (upperQuery.includes('WHERE order_id =')) {
+        const orderId = params[0];
+        result = cache.filter((item: any) => item.order_id === orderId) as T[];
+      } else if (upperQuery.includes('WHERE id =')) {
+        const id = params[0];
+        result = cache.filter((item: any) => item.id === id) as T[];
+      } else if (upperQuery.includes('WHERE invoice_number =')) {
+        const num = params[0];
+        result = cache.filter((item: any) => item.invoice_number === num) as T[];
+      } else if (upperQuery.includes('WHERE status =')) {
+        const status = params[0];
+        result = cache.filter((item: any) => (item.status || 'PENDING') === status) as T[];
+      }
+
+      if (upperQuery.includes('ORDER BY created_at DESC')) {
+        result.sort((a: any, b: any) => b.created_at - a.created_at);
+      } else if (upperQuery.includes('ORDER BY paid_at DESC')) {
+        result.sort((a: any, b: any) => (b.paid_at || 0) - (a.paid_at || 0));
       }
       return result;
     } else if (upperQuery.includes('SELECT SUM')) {
@@ -593,58 +663,6 @@ export class WebSQLiteDatabase {
     }
     
     return null;
-  }
-
-  // Méthodes async pour IndexedDB (pour usage futur)
-  async getAll<T>(storeName: keyof RestaurantDBSchema, indexName?: string, query?: any): Promise<T[]> {
-    const store = this.db.transaction(storeName, 'readonly').objectStore(storeName);
-    if (indexName && query !== undefined) {
-      const index = store.index(indexName);
-      return await index.getAll(query);
-    }
-    return await store.getAll();
-  }
-
-  async get<T>(storeName: keyof RestaurantDBSchema, key: string): Promise<T | undefined> {
-    return await this.db.get(storeName, key);
-  }
-
-  async put<T>(storeName: keyof RestaurantDBSchema, value: T): Promise<void> {
-    await this.db.put(storeName, value as any);
-  }
-
-  async delete(storeName: keyof RestaurantDBSchema, key: string): Promise<void> {
-    await this.db.delete(storeName, key);
-  }
-
-  async clear(storeName: keyof RestaurantDBSchema): Promise<void> {
-    await this.db.clear(storeName);
-  }
-
-  // Méthodes async pour IndexedDB
-  async getAll<T>(storeName: keyof RestaurantDBSchema, indexName?: string, query?: any): Promise<T[]> {
-    const store = this.db.transaction(storeName, 'readonly').objectStore(storeName);
-    if (indexName && query !== undefined) {
-      const index = store.index(indexName);
-      return await index.getAll(query);
-    }
-    return await store.getAll();
-  }
-
-  async get<T>(storeName: keyof RestaurantDBSchema, key: string): Promise<T | undefined> {
-    return await this.db.get(storeName, key);
-  }
-
-  async put<T>(storeName: keyof RestaurantDBSchema, value: T): Promise<void> {
-    await this.db.put(storeName, value as any);
-  }
-
-  async delete(storeName: keyof RestaurantDBSchema, key: string): Promise<void> {
-    await this.db.delete(storeName, key);
-  }
-
-  async clear(storeName: keyof RestaurantDBSchema): Promise<void> {
-    await this.db.clear(storeName);
   }
 }
 

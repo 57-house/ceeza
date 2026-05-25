@@ -1,5 +1,6 @@
 import { v4 as uuidv4 } from 'uuid';
 import { getDB } from '../db/database';
+import { pushLocalSync } from '../sync/syncBridge';
 import { Table, TableStatus } from '../types/table';
 
 export const tableService = {
@@ -15,14 +16,16 @@ export const tableService = {
         VALUES ('${id}', ${number}, ${capacity}, 'AVAILABLE', ${now}, ${now})
       `);
 
-      return {
+      const table = {
         id,
         number,
         capacity,
-        status: 'AVAILABLE',
+        status: 'AVAILABLE' as TableStatus,
         created_at: now,
         updated_at: now,
       };
+      pushLocalSync({ type: 'TABLE_SYNC', table });
+      return table;
     } catch (error) {
       console.error('Erreur dans addTable:', error);
       throw error;
@@ -62,17 +65,23 @@ export const tableService = {
   // Mettre à jour le statut d'une table
   updateTableStatus: (id: string, status: TableStatus): void => {
     const db = getDB();
+    const now = Date.now();
     db.execSync(`
       UPDATE tables 
-      SET status = '${status}', updated_at = ${Date.now()}
+      SET status = '${status}', updated_at = ${now}
       WHERE id = '${id}'
     `);
+    const table = tableService.getTableById(id);
+    if (table) {
+      pushLocalSync({ type: 'TABLE_SYNC', table: { ...table, status, updated_at: now } });
+    }
   },
 
   // Supprimer une table
   deleteTable: (id: string): void => {
     const db = getDB();
     db.execSync(`DELETE FROM tables WHERE id = '${id}'`);
+    pushLocalSync({ type: 'TABLE_DELETE', id });
   },
 
   // Vérifier si un numéro de table existe déjà

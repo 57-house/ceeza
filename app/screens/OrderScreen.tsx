@@ -13,6 +13,10 @@ import {
 } from 'react-native';
 import { menuService } from '../services/menuService';
 import { orderService } from '../services/orderService';
+import { useDatabaseReady } from '../hooks/useDatabaseReady';
+import { useSyncRefresh } from '../hooks/useSyncRefresh';
+import { broadcastOrderToKitchen, subscribeSync } from '../services/syncService';
+import { playOrderReadySound } from '../services/soundService';
 import { tableService } from '../services/tableService';
 import { MenuCategory, MenuItem, categoryLabels } from '../types/menu';
 import { Order, OrderItem } from '../types/order';
@@ -29,11 +33,37 @@ export default function OrderScreen() {
   const [showDrinkModal, setShowDrinkModal] = useState(false);
   const [lastAddedPlat, setLastAddedPlat] = useState<MenuItem | null>(null);
   const [selectedSupplements, setSelectedSupplements] = useState<MenuItem[]>([]);
+  const [completedOrders, setCompletedOrders] = useState<Order[]>([]);
 
-  useEffect(() => {
+  const loadCompletedOrders = () => {
+    try {
+      setCompletedOrders(orderService.getOrdersByStatus('READY'));
+    } catch (error) {
+      console.error('Erreur chargement commandes terminées:', error);
+    }
+  };
+
+  useDatabaseReady(() => {
     loadTables();
     loadMenuItems();
+    loadCompletedOrders();
+  });
+
+  useEffect(() => {
+    const unsubscribe = subscribeSync((event) => {
+      if (event.type === 'ORDER_READY') {
+        void playOrderReadySound();
+      }
+    });
+    return unsubscribe;
   }, []);
+
+  useSyncRefresh(() => {
+    loadTables();
+    loadMenuItems();
+    loadCompletedOrders();
+    if (selectedTable) loadOrder();
+  });
 
   useEffect(() => {
     if (selectedTable) {
@@ -63,10 +93,9 @@ export default function OrderScreen() {
     if (!selectedTable) return;
 
     try {
-      let currentOrder = orderService.getOpenOrderByTable(selectedTable.id);
+      let currentOrder = orderService.getActiveOrderByTable(selectedTable.id);
 
       if (!currentOrder) {
-        // Créer une nouvelle commande
         currentOrder = orderService.createOrder(selectedTable.id, selectedTable.number);
       }
 
@@ -178,6 +207,10 @@ export default function OrderScreen() {
           onPress: () => {
             try {
               orderService.updateOrderStatus(order.id, 'PREPARING');
+              const updated = orderService.getOrderById(order.id);
+              if (updated) {
+                broadcastOrderToKitchen(updated);
+              }
               loadOrder();
               Alert.alert('Succès', 'Commande envoyée à la cuisine');
             } catch (error) {
@@ -276,6 +309,30 @@ export default function OrderScreen() {
 
           <View style={styles.emptyState}>
             <Text style={styles.emptyText}>Sélectionnez une table pour commencer</Text>
+          </View>
+
+          <View style={styles.completedSection}>
+            <Text style={styles.completedTitle}>✅ Commandes terminées</Text>
+            {completedOrders.length === 0 ? (
+              <Text style={styles.completedEmpty}>Aucune commande prête pour le moment</Text>
+            ) : (
+              <FlatList
+                data={completedOrders}
+                keyExtractor={(item) => item.id}
+                renderItem={({ item }) => (
+                  <View style={styles.completedCard}>
+                    <Text style={styles.completedTable}>Table {item.table_number}</Text>
+                    <Text style={styles.completedTotal}>{item.total.toFixed(2)} €</Text>
+                    <Text style={styles.completedTime}>
+                      {new Date(item.updated_at).toLocaleTimeString('fr-FR', {
+                        hour: '2-digit',
+                        minute: '2-digit',
+                      })}
+                    </Text>
+                  </View>
+                )}
+              />
+            )}
           </View>
 
           <Modal
@@ -850,6 +907,51 @@ const styles = StyleSheet.create({
     fontSize: 18,
     color: '#666',
     textAlign: 'center',
+  },
+  completedSection: {
+    flex: 1,
+    padding: 16,
+    borderTopWidth: 1,
+    borderTopColor: '#e0e0e0',
+    backgroundColor: '#fff',
+  },
+  completedTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#333',
+    marginBottom: 12,
+  },
+  completedEmpty: {
+    fontSize: 14,
+    color: '#999',
+    textAlign: 'center',
+    paddingVertical: 24,
+  },
+  completedCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#E8F5E9',
+    padding: 14,
+    borderRadius: 8,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: '#4CAF50',
+  },
+  completedTable: {
+    flex: 1,
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#333',
+  },
+  completedTotal: {
+    fontSize: 15,
+    fontWeight: 'bold',
+    color: '#4CAF50',
+    marginRight: 12,
+  },
+  completedTime: {
+    fontSize: 13,
+    color: '#666',
   },
   emptyOrder: {
     padding: 40,

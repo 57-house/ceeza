@@ -1,15 +1,47 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import {
+  getConnectedDevicesCount,
+  getSyncConnectionState,
+  isMasterDevice,
+  subscribeSync,
+} from '../services/syncService';
+import { getSyncRole } from '../sync/syncRoleStorage';
 import DailySupplyScreen from './DailySupplyScreen';
+import CaisseScreen from './CaisseScreen';
+import InvoiceScreen from './InvoiceScreen';
+import KitchenScreen from './KitchenScreen';
 import MenuScreen from './MenuScreen';
 import OrderScreen from './OrderScreen';
+import NetworkScreen from './NetworkScreen';
 import SupplyItemsScreen from './SupplyItemsScreen';
 import TablesScreen from './TablesScreen';
 
-type Tab = 'tables' | 'menu' | 'supply-items' | 'daily-supply' | 'orders';
+type Tab = 'tables' | 'menu' | 'supply-items' | 'daily-supply' | 'orders' | 'kitchen' | 'invoices' | 'caisse' | 'network';
 
 export default function HomeScreen() {
   const [activeTab, setActiveTab] = useState<Tab>('tables');
+  const [syncOnline, setSyncOnline] = useState(getSyncConnectionState() === 'connected');
+  const [devicesOnNetwork, setDevicesOnNetwork] = useState(getConnectedDevicesCount());
+  const [isMaster, setIsMaster] = useState(isMasterDevice());
+
+  useEffect(() => {
+    getSyncRole().then((r) => setIsMaster(r === 'master'));
+    return subscribeSync((event) => {
+      const state = getSyncConnectionState();
+      setSyncOnline(state === 'connected' || state === 'master');
+      setIsMaster(state === 'master');
+      if (event.type === 'DISCONNECTED') {
+        setDevicesOnNetwork({ count: 0, max: 20 });
+      }
+      if (event.type === 'CLIENT_COUNT') {
+        setDevicesOnNetwork({ count: event.count, max: event.max });
+      }
+      if (event.type === 'CONNECTED') {
+        setDevicesOnNetwork(getConnectedDevicesCount());
+      }
+    });
+  }, []);
 
   const renderContent = () => {
     try {
@@ -24,6 +56,14 @@ export default function HomeScreen() {
           return <DailySupplyScreen />;
         case 'orders':
           return <OrderScreen />;
+        case 'kitchen':
+          return <KitchenScreen />;
+        case 'invoices':
+          return <InvoiceScreen />;
+        case 'caisse':
+          return <CaisseScreen />;
+        case 'network':
+          return <NetworkScreen />;
         default:
           return <TablesScreen />;
       }
@@ -41,6 +81,16 @@ export default function HomeScreen() {
 
   return (
     <View style={styles.container}>
+      <View style={styles.syncBar}>
+        <View style={[styles.syncDot, syncOnline ? styles.syncOn : styles.syncOff]} />
+        <Text style={styles.syncText}>
+          {syncOnline
+            ? isMaster
+              ? `Maître · ${devicesOnNetwork.count} client${devicesOnNetwork.count !== 1 ? 's' : ''} (onglet Réseau)`
+              : `Sync · ${devicesOnNetwork.count} appareil${devicesOnNetwork.count !== 1 ? 's' : ''} — configurez dans Réseau si besoin`
+            : 'Hors ligne — onglet Réseau : définir maître ou client'}
+        </Text>
+      </View>
       <View style={styles.tabBarContainer}>
         <ScrollView
           horizontal
@@ -113,6 +163,58 @@ export default function HomeScreen() {
               📝 Commandes
             </Text>
           </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.tab, activeTab === 'kitchen' && styles.activeTab]}
+            onPress={() => setActiveTab('kitchen')}
+          >
+            <Text
+              style={[
+                styles.tabText,
+                activeTab === 'kitchen' && styles.activeTabText,
+              ]}
+            >
+              🍳 Cuisine
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.tab, activeTab === 'invoices' && styles.activeTab]}
+            onPress={() => setActiveTab('invoices')}
+          >
+            <Text
+              style={[
+                styles.tabText,
+                activeTab === 'invoices' && styles.activeTabText,
+              ]}
+            >
+              🧾 Factures
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.tab, activeTab === 'caisse' && styles.activeTab]}
+            onPress={() => setActiveTab('caisse')}
+          >
+            <Text
+              style={[
+                styles.tabText,
+                activeTab === 'caisse' && styles.activeTabText,
+              ]}
+            >
+              💳 Caisse
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.tab, activeTab === 'network' && styles.activeTab]}
+            onPress={() => setActiveTab('network')}
+          >
+            <Text
+              style={[
+                styles.tabText,
+                activeTab === 'network' && styles.activeTabText,
+              ]}
+            >
+              📡 Réseau
+            </Text>
+          </TouchableOpacity>
         </ScrollView>
       </View>
 
@@ -128,6 +230,19 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#f5f5f5',
   },
+  syncBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    backgroundColor: '#f9f9f9',
+    borderBottomWidth: 1,
+    borderBottomColor: '#e0e0e0',
+  },
+  syncDot: { width: 8, height: 8, borderRadius: 4, marginRight: 8 },
+  syncOn: { backgroundColor: '#4CAF50' },
+  syncOff: { backgroundColor: '#F44336' },
+  syncText: { fontSize: 12, color: '#666' },
   tabBarContainer: {
     backgroundColor: '#fff',
     borderBottomWidth: 1,

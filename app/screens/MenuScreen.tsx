@@ -12,6 +12,8 @@ import {
   Keyboard,
   TouchableWithoutFeedback,
 } from 'react-native';
+import { useDatabaseReady } from '../hooks/useDatabaseReady';
+import { useSyncRefresh } from '../hooks/useSyncRefresh';
 import { menuService } from '../services/menuService';
 import { MenuItem, MenuCategory, categoryLabels } from '../types/menu';
 
@@ -25,10 +27,6 @@ export default function MenuScreen() {
   const [price, setPrice] = useState('');
   const [available, setAvailable] = useState(true);
 
-  useEffect(() => {
-    loadMenuItems();
-  }, []);
-
   const loadMenuItems = () => {
     try {
       const allItems = menuService.getAllMenuItems();
@@ -38,6 +36,10 @@ export default function MenuScreen() {
       Alert.alert('Erreur', 'Impossible de charger le menu');
     }
   };
+
+  useDatabaseReady(loadMenuItems);
+
+  useSyncRefresh(loadMenuItems);
 
   const handleOpenModal = (item?: MenuItem) => {
     if (item) {

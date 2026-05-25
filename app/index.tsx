@@ -30,6 +30,8 @@ import { useEffect, useState } from 'react';
 import { View, Text, ActivityIndicator, StyleSheet, Platform } from 'react-native';
 import { initDB } from './db/database';
 import HomeScreen from './screens/HomeScreen';
+import { connectSyncService } from './services/syncService';
+import { initSoundService } from './services/soundService';
 
 export default function App() {
   const [dbReady, setDbReady] = useState(false);
@@ -39,6 +41,8 @@ export default function App() {
     const initialize = async () => {
       try {
         await initDB();
+        await initSoundService();
+        await connectSyncService();
         setDbReady(true);
       } catch (err) {
         console.error('Erreur lors de l\'initialisation:', err);

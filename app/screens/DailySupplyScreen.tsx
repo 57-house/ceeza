@@ -13,6 +13,7 @@ import {
   TouchableWithoutFeedback,
   View,
 } from 'react-native';
+import { useDatabaseReady } from '../hooks/useDatabaseReady';
 import { supplyItemService } from '../services/supplyItemService';
 import { SupplyOrder, supplyOrderService } from '../services/supplyOrderService';
 import { SupplyEntry, SupplyItem, SupplyUnit, unitShortLabels } from '../types/supply';
@@ -26,15 +27,6 @@ export default function DailySupplyScreen() {
   const [quantity, setQuantity] = useState('');
   const [cost, setCost] = useState('');
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
-
-  useEffect(() => {
-    // Attendre un peu pour s'assurer que la DB est prête
-    const timer = setTimeout(() => {
-      loadOrderForDate(selectedDate);
-      loadSupplyItems();
-    }, 100);
-    return () => clearTimeout(timer);
-  }, []);
 
   const loadOrderForDate = (date: Date, createIfNotExists: boolean = true) => {
     try {
@@ -69,6 +61,11 @@ export default function DailySupplyScreen() {
       console.error('Erreur lors du chargement des articles:', error);
     }
   };
+
+  useDatabaseReady(() => {
+    loadOrderForDate(selectedDate);
+    loadSupplyItems();
+  });
 
   const handleOpenModal = () => {
     setSelectedItem(null);

@@ -1,5 +1,6 @@
 import { v4 as uuidv4 } from 'uuid';
 import { getDB } from '../db/database';
+import { pushLocalSync } from '../sync/syncBridge';
 import { SupplyItem, SupplyUnit } from '../types/supply';
 
 export const supplyItemService = {
@@ -19,7 +20,7 @@ export const supplyItemService = {
         VALUES ('${id}', '${name.replace(/'/g, "''")}', '${unit}', 0, ${min_stock}, ${now}, ${now})
       `);
 
-      return {
+      const item = {
         id,
         name,
         unit,
@@ -28,6 +29,8 @@ export const supplyItemService = {
         created_at: now,
         updated_at: now,
       };
+      pushLocalSync({ type: 'SUPPLY_ITEM_SYNC', item });
+      return item;
     } catch (error) {
       console.error('Erreur dans addSupplyItem:', error);
       throw error;
@@ -81,6 +84,8 @@ export const supplyItemService = {
             updated_at = ${Date.now()}
         WHERE id = '${id}'
       `);
+      const updated = supplyItemService.getSupplyItemById(id);
+      if (updated) pushLocalSync({ type: 'SUPPLY_ITEM_SYNC', item: updated });
     } catch (error) {
       console.error('Erreur dans updateSupplyItem:', error);
       throw error;
@@ -97,6 +102,8 @@ export const supplyItemService = {
             updated_at = ${Date.now()}
         WHERE id = '${id}'
       `);
+      const updated = supplyItemService.getSupplyItemById(id);
+      if (updated) pushLocalSync({ type: 'SUPPLY_ITEM_SYNC', item: updated });
     } catch (error) {
       console.error('Erreur dans updateStock:', error);
       throw error;
@@ -123,6 +130,7 @@ export const supplyItemService = {
     const db = getDB();
     try {
       db.execSync(`DELETE FROM supply_items WHERE id = '${id}'`);
+      pushLocalSync({ type: 'SUPPLY_ITEM_DELETE', id });
     } catch (error) {
       console.error('Erreur dans deleteSupplyItem:', error);
       throw error;

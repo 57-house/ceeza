@@ -9,7 +9,10 @@
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSLocalNetworkUsageDescription": "Ceeza synchronise les commandes entre les appareils du restaurant sur le Wi‑Fi local."
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -40,7 +43,13 @@
           }
         }
       ],
-      "expo-sqlite"
+      "expo-sqlite",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Autoriser l'accès à la caméra pour scanner les QR codes des factures."
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,
