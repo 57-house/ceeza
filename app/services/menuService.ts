@@ -1,6 +1,7 @@
-import { v4 as uuidv4 } from 'uuid';
 import { getDB } from '../db/database';
 import { pushLocalSync } from '../sync/syncBridge';
+import { sqlEscape } from '../utils/sqlEscape';
+import { stableMenuItemId } from '../utils/stableId';
 import { MenuItem, MenuCategory } from '../types/menu';
 
 export const menuService = {
@@ -12,13 +13,18 @@ export const menuService = {
     price: number
   ): MenuItem => {
     const db = getDB();
-    const id = uuidv4();
+    const id = stableMenuItemId(name);
     const now = Date.now();
+
+    const existing = menuService.getMenuItemById(id);
+    if (existing) {
+      throw new Error(`Le plat « ${name} » existe déjà`);
+    }
 
     try {
       db.execSync(`
-        INSERT INTO menu_items (id, name, description, category, price, available, created_at, updated_at)
-        VALUES ('${id}', '${name.replace(/'/g, "''")}', '${description.replace(/'/g, "''")}', '${category}', ${price}, 1, ${now}, ${now})
+        INSERT OR REPLACE INTO menu_items (id, name, description, category, price, available, created_at, updated_at)
+        VALUES ('${id}', '${sqlEscape(name)}', '${sqlEscape(description)}', '${category}', ${price}, 1, ${now}, ${now})
       `);
 
       const item = {

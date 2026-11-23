@@ -1,6 +1,7 @@
-import { v4 as uuidv4 } from 'uuid';
 import { getDB } from '../db/database';
 import { pushLocalSync } from '../sync/syncBridge';
+import { sqlEscape } from '../utils/sqlEscape';
+import { stableSupplyEntryId, stableSupplyItemId, stableSupplyOrderId } from '../utils/stableId';
 import { SupplyEntry, SupplyUnit } from '../types/supply';
 import { supplyItemService } from './supplyItemService';
 
@@ -23,12 +24,12 @@ export const supplyOrderService = {
   // Créer un nouvel approvisionnement
   createSupplyOrder: (date: number): string => {
     const db = getDB();
-    const id = uuidv4();
+    const id = stableSupplyOrderId(date);
     const now = Date.now();
 
     try {
       db.execSync(`
-        INSERT INTO supply_orders (id, date, status, created_at, updated_at)
+        INSERT OR REPLACE INTO supply_orders (id, date, status, created_at, updated_at)
         VALUES ('${id}', ${date}, 'PENDING', ${now}, ${now})
       `);
       syncSupplyOrder(id);
@@ -49,13 +50,25 @@ export const supplyOrderService = {
     cost: number
   ): void => {
     const db = getDB();
-    const entryId = uuidv4();
+    const canonicalItemId = stableSupplyItemId(itemName);
+    const entryId = stableSupplyEntryId(orderId, canonicalItemId);
 
     try {
-      db.execSync(`
-        INSERT INTO supply_order_items (id, order_id, item_id, item_name, quantity, unit, cost)
-        VALUES ('${entryId}', '${orderId}', '${itemId}', '${itemName.replace(/'/g, "''")}', ${quantity}, '${unit}', ${cost})
-      `);
+      const existing = db.getFirstSync<{ quantity: number }>(
+        'SELECT quantity FROM supply_order_items WHERE id = ?',
+        [entryId]
+      );
+      if (existing) {
+        db.execSync(`
+          UPDATE supply_order_items SET quantity = ${existing.quantity + quantity}, cost = ${cost}
+          WHERE id = '${entryId}'
+        `);
+      } else {
+        db.execSync(`
+          INSERT INTO supply_order_items (id, order_id, item_id, item_name, quantity, unit, cost)
+          VALUES ('${entryId}', '${orderId}', '${canonicalItemId}', '${sqlEscape(itemName)}', ${quantity}, '${unit}', ${cost})
+        `);
+      }
       syncSupplyOrder(orderId);
     } catch (error) {
       console.error('Erreur dans addItemToOrder:', error);
@@ -142,26 +155,12 @@ export const supplyOrderService = {
 
   // Récupérer l'approvisionnement du jour
   getTodaySupplyOrder: (): SupplyOrder | null => {
-    const db = getDB();
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const todayTimestamp = today.getTime();
 
     try {
-      const order = db.getFirstSync<{
-        id: string;
-        date: number;
-        status: string;
-        created_at: number;
-        updated_at: number;
-      }>(
-        'SELECT * FROM supply_orders WHERE date = ? ORDER BY created_at DESC LIMIT 1',
-        [todayTimestamp]
-      );
-
-      if (!order) return null;
-
-      return supplyOrderService.getSupplyOrderById(order.id);
+      return supplyOrderService.getSupplyOrderById(stableSupplyOrderId(todayTimestamp));
     } catch (error) {
       console.error('Erreur dans getTodaySupplyOrder:', error);
       return null;
@@ -170,26 +169,12 @@ export const supplyOrderService = {
 
   // Récupérer un approvisionnement par date
   getSupplyOrderByDate: (date: number): SupplyOrder | null => {
-    const db = getDB();
     const selectedDate = new Date(date);
     selectedDate.setHours(0, 0, 0, 0);
     const dateTimestamp = selectedDate.getTime();
 
     try {
-      const order = db.getFirstSync<{
-        id: string;
-        date: number;
-        status: string;
-        created_at: number;
-        updated_at: number;
-      }>(
-        'SELECT * FROM supply_orders WHERE date = ? ORDER BY created_at DESC LIMIT 1',
-        [dateTimestamp]
-      );
-
-      if (!order) return null;
-
-      return supplyOrderService.getSupplyOrderById(order.id);
+      return supplyOrderService.getSupplyOrderById(stableSupplyOrderId(dateTimestamp));
     } catch (error) {
       console.error('Erreur dans getSupplyOrderByDate:', error);
       return null;

@@ -14,6 +14,7 @@ import { useSyncRefresh } from '../hooks/useSyncRefresh';
 import { orderService } from '../services/orderService';
 import { broadcastOrderReady } from '../services/syncService';
 import { Order, OrderItem } from '../types/order';
+import { formatOrderDateTime } from '../utils/orderDate';
 
 export default function KitchenScreen() {
   const [orders, setOrders] = useState<Order[]>([]);
@@ -92,16 +93,18 @@ export default function KitchenScreen() {
     );
   };
 
-  const renderOrder = ({ item }: { item: Order }) => (
+  const renderOrder = ({ item }: { item: Order }) => {
+    const tableWave =
+      orders.filter((o) => o.table_number === item.table_number).findIndex((o) => o.id === item.id) + 1;
+
+    return (
     <View style={styles.card}>
       <View style={styles.cardHeader}>
-        <Text style={styles.tableLabel}>Table {item.table_number}</Text>
-        <Text style={styles.timeLabel}>
-          {new Date(item.created_at).toLocaleTimeString('fr-FR', {
-            hour: '2-digit',
-            minute: '2-digit',
-          })}
+        <Text style={styles.tableLabel}>
+          Table {item.table_number}
+          {tableWave > 1 ? ` · Commande ${tableWave}` : ''}
         </Text>
+        <Text style={styles.timeLabel}>{formatOrderDateTime(item.created_at)}</Text>
       </View>
 
       <View style={styles.itemsBlock}>{item.items.map(renderItemLine)}</View>
@@ -116,6 +119,7 @@ export default function KitchenScreen() {
       </TouchableOpacity>
     </View>
   );
+  };
 
   return (
     <View style={styles.container}>

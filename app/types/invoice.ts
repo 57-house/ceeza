@@ -19,6 +19,8 @@ export interface Invoice {
   status: InvoiceStatus;
   created_at: number;
   paid_at: number | null;
+  /** IDs des commandes regroupées (facture table) */
+  linked_order_ids?: string | null;
 }
 
 export interface InvoiceWithOrder extends Invoice {

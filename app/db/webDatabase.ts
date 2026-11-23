@@ -529,6 +529,9 @@ export class WebSQLiteDatabase {
         if (upperQuery.includes("status = 'OPEN'")) {
           result = result.filter((item: any) => item.status === 'OPEN') as T[];
         }
+        if (upperQuery.includes("status = 'PREPARING'")) {
+          result = result.filter((item: any) => item.status === 'PREPARING') as T[];
+        }
         if (upperQuery.includes("status IN ('OPEN', 'PREPARING')")) {
           result = result.filter(
             (item: any) => item.status === 'OPEN' || item.status === 'PREPARING'

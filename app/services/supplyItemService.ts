@@ -1,6 +1,7 @@
-import { v4 as uuidv4 } from 'uuid';
 import { getDB } from '../db/database';
 import { pushLocalSync } from '../sync/syncBridge';
+import { sqlEscape } from '../utils/sqlEscape';
+import { stableSupplyItemId } from '../utils/stableId';
 import { SupplyItem, SupplyUnit } from '../types/supply';
 
 export const supplyItemService = {
@@ -11,13 +12,13 @@ export const supplyItemService = {
     min_stock: number
   ): SupplyItem => {
     const db = getDB();
-    const id = uuidv4();
+    const id = stableSupplyItemId(name);
     const now = Date.now();
 
     try {
       db.execSync(`
-        INSERT INTO supply_items (id, name, unit, current_stock, min_stock, created_at, updated_at)
-        VALUES ('${id}', '${name.replace(/'/g, "''")}', '${unit}', 0, ${min_stock}, ${now}, ${now})
+        INSERT OR REPLACE INTO supply_items (id, name, unit, current_stock, min_stock, created_at, updated_at)
+        VALUES ('${id}', '${sqlEscape(name)}', '${unit}', 0, ${min_stock}, ${now}, ${now})
       `);
 
       const item = {

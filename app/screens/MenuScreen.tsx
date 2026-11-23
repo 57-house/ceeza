@@ -1,9 +1,9 @@
-import { useState, useEffect } from 'react';
+import { useMemo, useState } from 'react';
 import {
   View,
   Text,
   StyleSheet,
-  FlatList,
+  SectionList,
   TouchableOpacity,
   Alert,
   TextInput,
@@ -17,6 +17,15 @@ import { useSyncRefresh } from '../hooks/useSyncRefresh';
 import { menuService } from '../services/menuService';
 import { MenuItem, MenuCategory, categoryLabels } from '../types/menu';
 
+const CATEGORY_ORDER: MenuCategory[] = [
+  'ENTREE',
+  'PLAT',
+  'DESSERT',
+  'BOISSON',
+  'SUPPLEMENT',
+  'AUTRE',
+];
+
 export default function MenuScreen() {
   const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
   const [modalVisible, setModalVisible] = useState(false);
@@ -26,6 +35,7 @@ export default function MenuScreen() {
   const [category, setCategory] = useState<MenuCategory>('PLAT');
   const [price, setPrice] = useState('');
   const [available, setAvailable] = useState(true);
+  const [selectedCategory, setSelectedCategory] = useState<MenuCategory | null>(null);
 
   const loadMenuItems = () => {
     try {
@@ -40,6 +50,40 @@ export default function MenuScreen() {
   useDatabaseReady(loadMenuItems);
 
   useSyncRefresh(loadMenuItems);
+
+  const menuSections = useMemo(() => {
+    const grouped = new Map<MenuCategory, MenuItem[]>();
+    for (const cat of CATEGORY_ORDER) {
+      grouped.set(cat, []);
+    }
+    for (const item of menuItems) {
+      const cat = CATEGORY_ORDER.includes(item.category) ? item.category : 'AUTRE';
+      grouped.get(cat)!.push(item);
+    }
+    return CATEGORY_ORDER.map((category) => ({
+      category,
+      title: categoryLabels[category],
+      data: grouped
+        .get(category)!
+        .sort((a, b) => a.name.localeCompare(b.name, 'fr')),
+    })).filter((section) => section.data.length > 0);
+  }, [menuItems]);
+
+  const categoriesWithItems = useMemo(
+    () => new Set(menuSections.map((section) => section.category)),
+    [menuSections]
+  );
+
+  /** Catégorie affichée : celle choisie si elle a encore des articles, sinon la première non vide */
+  const activeCategory = useMemo<MenuCategory | null>(() => {
+    if (selectedCategory && categoriesWithItems.has(selectedCategory)) return selectedCategory;
+    return menuSections[0]?.category ?? null;
+  }, [selectedCategory, categoriesWithItems, menuSections]);
+
+  const displayedSections = useMemo(() => {
+    if (!activeCategory) return [];
+    return menuSections.filter((section) => section.category === activeCategory);
+  }, [menuSections, activeCategory]);
 
   const handleOpenModal = (item?: MenuItem) => {
     if (item) {
@@ -164,19 +208,7 @@ export default function MenuScreen() {
   const renderMenuItem = ({ item }: { item: MenuItem }) => (
     <View style={styles.menuCard}>
       <View style={styles.menuHeader}>
-        <View style={styles.menuHeaderLeft}>
-          <Text style={styles.menuName}>{item.name}</Text>
-          <View
-            style={[
-              styles.categoryBadge,
-              { backgroundColor: getCategoryColor(item.category) },
-            ]}
-          >
-            <Text style={styles.categoryText}>
-              {categoryLabels[item.category]}
-            </Text>
-          </View>
-        </View>
+        <Text style={styles.menuName}>{item.name}</Text>
         <Text style={styles.menuPrice}>{item.price.toFixed(2)} €</Text>
       </View>
 
@@ -223,15 +255,6 @@ export default function MenuScreen() {
     </View>
   );
 
-  const categories: MenuCategory[] = [
-    'ENTREE',
-    'PLAT',
-    'DESSERT',
-    'BOISSON',
-    'SUPPLEMENT',
-    'AUTRE',
-  ];
-
   return (
     <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
       <View style={styles.container}>
@@ -253,12 +276,46 @@ export default function MenuScreen() {
           </Text>
         </View>
       ) : (
-        <FlatList
-          data={menuItems}
-          renderItem={renderMenuItem}
-          keyExtractor={(item) => item.id}
-          contentContainerStyle={styles.list}
-        />
+        <>
+          <View style={styles.categoryBar}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            style={styles.categoryTabs}
+            contentContainerStyle={styles.categoryTabsContent}
+          >
+            {CATEGORY_ORDER.filter((cat) => categoriesWithItems.has(cat)).map((cat) => (
+              <TouchableOpacity
+                key={cat}
+                style={[
+                  styles.categoryTab,
+                  activeCategory === cat && styles.categoryTabActive,
+                  { borderColor: getCategoryColor(cat) },
+                  activeCategory === cat && { backgroundColor: getCategoryColor(cat) },
+                ]}
+                onPress={() => setSelectedCategory(cat)}
+              >
+                <Text
+                  style={[
+                    styles.categoryTabText,
+                    activeCategory === cat && styles.categoryTabTextActive,
+                  ]}
+                >
+                  {categoryLabels[cat]}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+          </View>
+
+          <SectionList
+            sections={displayedSections}
+            renderItem={renderMenuItem}
+            keyExtractor={(item) => item.id}
+            contentContainerStyle={styles.list}
+            stickySectionHeadersEnabled={false}
+          />
+        </>
       )}
 
       <Modal
@@ -296,7 +353,7 @@ export default function MenuScreen() {
 
               <Text style={styles.label}>Catégorie *</Text>
               <View style={styles.categoryContainer}>
-                {categories.map((cat) => (
+                {CATEGORY_ORDER.map((cat) => (
                   <TouchableOpacity
                     key={cat}
                     style={[
@@ -410,8 +467,51 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     fontSize: 24,
   },
+  categoryBar: {
+    paddingHorizontal: 10,
+    paddingTop: 10,
+    paddingBottom: 10,
+    backgroundColor: '#fff',
+    borderBottomWidth: 1,
+    borderBottomColor: '#e0e0e0',
+  },
+  categoryTabs: {
+    flexGrow: 0,
+  },
+  categoryTabsContent: {
+    paddingRight: 8,
+    alignItems: 'center',
+    flexDirection: 'row',
+  },
+  categoryTab: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    minHeight: 36,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderRadius: 18,
+    backgroundColor: '#f0f0f0',
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+    marginRight: 8,
+  },
+  categoryTabActive: {
+    backgroundColor: '#4CAF50',
+    borderColor: '#4CAF50',
+  },
+  categoryTabText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#333',
+    lineHeight: 18,
+    textAlign: 'center',
+  },
+  categoryTabTextActive: {
+    color: '#fff',
+  },
   list: {
     padding: 16,
+    paddingBottom: 24,
   },
   menuCard: {
     backgroundColor: '#fff',
@@ -430,26 +530,12 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
     marginBottom: 8,
   },
-  menuHeaderLeft: {
-    flex: 1,
-    marginRight: 12,
-  },
   menuName: {
+    flex: 1,
     fontSize: 18,
     fontWeight: 'bold',
     color: '#333',
-    marginBottom: 6,
-  },
-  categoryBadge: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 12,
-    alignSelf: 'flex-start',
-  },
-  categoryText: {
-    color: '#fff',
-    fontSize: 11,
-    fontWeight: '600',
+    marginRight: 12,
   },
   menuPrice: {
     fontSize: 20,
@@ -577,7 +663,10 @@ const styles = StyleSheet.create({
   },
   categoryOption: {
     paddingVertical: 8,
-    paddingHorizontal: 16,
+    paddingHorizontal: 12,
+    minHeight: 36,
+    justifyContent: 'center',
+    alignItems: 'center',
     borderRadius: 8,
     borderWidth: 2,
     backgroundColor: '#fff',
@@ -586,13 +675,15 @@ const styles = StyleSheet.create({
     backgroundColor: '#f0f0f0',
   },
   categoryOptionText: {
-    fontSize: 14,
-    color: '#666',
+    fontSize: 13,
+    color: '#333',
     fontWeight: '500',
+    lineHeight: 18,
+    textAlign: 'center',
   },
   categoryOptionTextSelected: {
-    color: '#333',
-    fontWeight: '600',
+    color: '#111',
+    fontWeight: '700',
   },
   switchButton: {
     paddingVertical: 12,

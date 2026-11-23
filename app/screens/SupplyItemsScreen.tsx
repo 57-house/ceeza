@@ -1,9 +1,9 @@
-import { useState, useEffect } from 'react';
+import { useMemo, useState } from 'react';
 import {
   View,
   Text,
   StyleSheet,
-  FlatList,
+  SectionList,
   TouchableOpacity,
   Alert,
   TextInput,
@@ -13,8 +13,20 @@ import {
   TouchableWithoutFeedback,
 } from 'react-native';
 import { useDatabaseReady } from '../hooks/useDatabaseReady';
+import { useSyncRefresh } from '../hooks/useSyncRefresh';
 import { supplyItemService } from '../services/supplyItemService';
 import { SupplyItem, SupplyUnit, unitLabels, unitShortLabels } from '../types/supply';
+
+const UNIT_ORDER: SupplyUnit[] = ['KG', 'L', 'PIECE', 'BOITE', 'SACHET', 'AUTRE'];
+
+const UNIT_TAB_LABELS: Record<SupplyUnit, string> = {
+  KG: 'kg',
+  L: 'Litre',
+  PIECE: 'Pièce',
+  BOITE: 'Boîte',
+  SACHET: 'Sachet',
+  AUTRE: 'Autre',
+};
 
 export default function SupplyItemsScreen() {
   const [items, setItems] = useState<SupplyItem[]>([]);
@@ -23,6 +35,7 @@ export default function SupplyItemsScreen() {
   const [name, setName] = useState('');
   const [unit, setUnit] = useState<SupplyUnit>('KG');
   const [minStock, setMinStock] = useState('');
+  const [selectedUnit, setSelectedUnit] = useState<SupplyUnit | 'ALL'>('ALL');
 
   const loadItems = () => {
     try {
@@ -35,6 +48,52 @@ export default function SupplyItemsScreen() {
   };
 
   useDatabaseReady(loadItems);
+  useSyncRefresh(loadItems);
+
+  const itemSections = useMemo(() => {
+    const grouped = new Map<SupplyUnit, SupplyItem[]>();
+    for (const u of UNIT_ORDER) {
+      grouped.set(u, []);
+    }
+    for (const item of items) {
+      const u = UNIT_ORDER.includes(item.unit) ? item.unit : 'AUTRE';
+      grouped.get(u)!.push(item);
+    }
+    return UNIT_ORDER.map((unitKey) => ({
+      unit: unitKey,
+      title: unitLabels[unitKey],
+      data: grouped
+        .get(unitKey)!
+        .sort((a, b) => a.name.localeCompare(b.name, 'fr')),
+    })).filter((section) => section.data.length > 0);
+  }, [items]);
+
+  const displayedSections = useMemo(() => {
+    if (selectedUnit === 'ALL') return itemSections;
+    return itemSections.filter((section) => section.unit === selectedUnit);
+  }, [itemSections, selectedUnit]);
+
+  const unitsWithItems = useMemo(
+    () => new Set(itemSections.map((section) => section.unit)),
+    [itemSections]
+  );
+
+  const getUnitColor = (u: SupplyUnit): string => {
+    switch (u) {
+      case 'KG':
+        return '#4CAF50';
+      case 'L':
+        return '#2196F3';
+      case 'PIECE':
+        return '#FF9800';
+      case 'BOITE':
+        return '#9C27B0';
+      case 'SACHET':
+        return '#795548';
+      default:
+        return '#757575';
+    }
+  };
 
   const handleOpenModal = (item?: SupplyItem) => {
     if (item) {
@@ -155,10 +214,6 @@ export default function SupplyItemsScreen() {
               {item.min_stock} {unitShortLabels[item.unit]}
             </Text>
           </View>
-          <View style={styles.detailRow}>
-            <Text style={styles.detailLabel}>Unité:</Text>
-            <Text style={styles.detailValue}>{unitLabels[item.unit]}</Text>
-          </View>
         </View>
 
         <View style={styles.itemActions}>
@@ -179,7 +234,21 @@ export default function SupplyItemsScreen() {
     );
   };
 
-  const units: SupplyUnit[] = ['KG', 'L', 'PIECE', 'BOITE', 'SACHET', 'AUTRE'];
+  const renderSectionHeader = ({
+    section,
+  }: {
+    section: { title: string; unit: SupplyUnit; data: SupplyItem[] };
+  }) => (
+    <View
+      style={[
+        styles.sectionHeader,
+        { borderLeftColor: getUnitColor(section.unit) },
+      ]}
+    >
+      <Text style={styles.sectionTitle}>{section.title}</Text>
+      <Text style={styles.sectionCount}>{section.data.length}</Text>
+    </View>
+  );
 
   return (
     <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
@@ -202,12 +271,65 @@ export default function SupplyItemsScreen() {
           </Text>
         </View>
       ) : (
-        <FlatList
-          data={items}
-          renderItem={renderItem}
-          keyExtractor={(item) => item.id}
-          contentContainerStyle={styles.list}
-        />
+        <>
+          <View style={styles.unitBar}>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              style={styles.unitTabs}
+              contentContainerStyle={styles.unitTabsContent}
+            >
+              <TouchableOpacity
+                style={[
+                  styles.unitTab,
+                  selectedUnit === 'ALL' && styles.unitTabActive,
+                ]}
+                onPress={() => setSelectedUnit('ALL')}
+              >
+                <Text
+                  style={[
+                    styles.unitTabText,
+                    selectedUnit === 'ALL' && styles.unitTabTextActive,
+                  ]}
+                >
+                  Tout
+                </Text>
+              </TouchableOpacity>
+              {UNIT_ORDER.filter((u) => unitsWithItems.has(u)).map((u) => (
+                <TouchableOpacity
+                  key={u}
+                  style={[
+                    styles.unitTab,
+                    selectedUnit === u && styles.unitTabActive,
+                    { borderColor: getUnitColor(u) },
+                    selectedUnit === u && { backgroundColor: getUnitColor(u) },
+                  ]}
+                  onPress={() => setSelectedUnit(u)}
+                >
+                  <Text
+                    style={[
+                      styles.unitTabText,
+                      selectedUnit === u && styles.unitTabTextActive,
+                    ]}
+                  >
+                    {UNIT_TAB_LABELS[u]}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+
+          <SectionList
+            sections={displayedSections}
+            renderItem={renderItem}
+            renderSectionHeader={
+              selectedUnit === 'ALL' ? renderSectionHeader : undefined
+            }
+            keyExtractor={(item) => item.id}
+            contentContainerStyle={styles.list}
+            stickySectionHeadersEnabled={selectedUnit === 'ALL'}
+          />
+        </>
       )}
 
       <Modal
@@ -235,12 +357,14 @@ export default function SupplyItemsScreen() {
 
               <Text style={styles.label}>Unité *</Text>
               <View style={styles.unitContainer}>
-                {units.map((u) => (
+                {UNIT_ORDER.map((u) => (
                   <TouchableOpacity
                     key={u}
                     style={[
                       styles.unitOption,
                       unit === u && styles.unitOptionSelected,
+                      { borderColor: getUnitColor(u) },
+                      unit === u && { backgroundColor: getUnitColor(u) },
                     ]}
                     onPress={() => setUnit(u)}
                   >
@@ -250,7 +374,7 @@ export default function SupplyItemsScreen() {
                         unit === u && styles.unitOptionTextSelected,
                       ]}
                     >
-                      {unitLabels[u]}
+                      {UNIT_TAB_LABELS[u]}
                     </Text>
                   </TouchableOpacity>
                 ))}
@@ -326,8 +450,73 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     fontSize: 24,
   },
+  unitBar: {
+    paddingHorizontal: 16,
+    paddingTop: 10,
+    paddingBottom: 10,
+    backgroundColor: '#fff',
+    borderBottomWidth: 1,
+    borderBottomColor: '#e0e0e0',
+  },
+  unitTabs: {
+    flexGrow: 0,
+  },
+  unitTabsContent: {
+    paddingRight: 8,
+    alignItems: 'center',
+    flexDirection: 'row',
+  },
+  unitTab: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    minHeight: 36,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderRadius: 18,
+    backgroundColor: '#f0f0f0',
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+    marginRight: 8,
+  },
+  unitTabActive: {
+    backgroundColor: '#4CAF50',
+    borderColor: '#4CAF50',
+  },
+  unitTabText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#333',
+    lineHeight: 18,
+    textAlign: 'center',
+  },
+  unitTabTextActive: {
+    color: '#fff',
+  },
   list: {
     padding: 16,
+    paddingBottom: 24,
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#f5f5f5',
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    marginBottom: 8,
+    marginTop: 4,
+    borderLeftWidth: 4,
+    borderRadius: 6,
+  },
+  sectionTitle: {
+    fontSize: 17,
+    fontWeight: 'bold',
+    color: '#333',
+  },
+  sectionCount: {
+    fontSize: 13,
+    color: '#888',
+    fontWeight: '600',
   },
   itemCard: {
     backgroundColor: '#fff',
@@ -468,25 +657,27 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   unitOption: {
-    paddingVertical: 10,
-    paddingHorizontal: 16,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    minHeight: 36,
+    justifyContent: 'center',
+    alignItems: 'center',
     borderRadius: 8,
     borderWidth: 2,
     borderColor: '#ddd',
     backgroundColor: '#fff',
   },
-  unitOptionSelected: {
-    borderColor: '#4CAF50',
-    backgroundColor: '#E8F5E9',
-  },
+  unitOptionSelected: {},
   unitOptionText: {
-    fontSize: 14,
-    color: '#666',
+    fontSize: 13,
+    color: '#333',
     fontWeight: '500',
+    lineHeight: 18,
+    textAlign: 'center',
   },
   unitOptionTextSelected: {
-    color: '#4CAF50',
-    fontWeight: '600',
+    color: '#fff',
+    fontWeight: '700',
   },
   modalButtons: {
     flexDirection: 'row',

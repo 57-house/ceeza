@@ -22,6 +22,10 @@ import {
 } from '../services/syncService';
 import { getMasterHost, getSyncRole, setMasterHost, setSyncRole, SyncRole } from '../sync/syncRoleStorage';
 import { getLocalIpAddress } from '../utils/deviceNetwork';
+import {
+  getDevicePhysicalIdLabel,
+  getDevicePhysicalIdOrFallback,
+} from '../utils/devicePhysicalId';
 
 export default function NetworkScreen() {
   const [role, setRole] = useState<SyncRole>('unset');
@@ -111,6 +115,14 @@ export default function NetworkScreen() {
           </Text>
         </View>
       )}
+
+      <View style={styles.deviceIdBox}>
+        <Text style={styles.deviceIdLabel}>Identifiant physique de cet appareil</Text>
+        <Text style={styles.deviceIdValue} selectable>
+          {getDevicePhysicalIdOrFallback()}
+        </Text>
+        <Text style={styles.deviceIdHint}>Résumé : {getDevicePhysicalIdLabel()}</Text>
+      </View>
 
       <View style={styles.statusCard}>
         <Text style={styles.statusLabel}>État actuel</Text>
@@ -203,6 +215,15 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   warningText: { color: '#E65100', fontSize: 13 },
+  deviceIdBox: {
+    backgroundColor: '#E3F2FD',
+    padding: 12,
+    borderRadius: 10,
+    marginBottom: 16,
+  },
+  deviceIdLabel: { fontSize: 12, color: '#1565C0', marginBottom: 4 },
+  deviceIdValue: { fontSize: 11, color: '#0D47A1', fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace' },
+  deviceIdHint: { fontSize: 11, color: '#1976D2', marginTop: 6 },
   statusCard: {
     backgroundColor: '#fff',
     padding: 16,

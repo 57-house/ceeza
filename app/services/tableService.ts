@@ -1,38 +1,56 @@
-import { v4 as uuidv4 } from 'uuid';
 import { getDB } from '../db/database';
 import { pushLocalSync } from '../sync/syncBridge';
+import { sqlEscape } from '../utils/sqlEscape';
+import { stableTableId } from '../utils/stableId';
 import { Table, TableStatus } from '../types/table';
 
 export const tableService = {
-  // Ajouter une nouvelle table
-  addTable: (number: number, capacity: number): Table => {
+  /** ID canonique pour une table (même sur tous les appareils). */
+  resolveTableId(tableNumber: number, fallbackId?: string): string {
+    return stableTableId(tableNumber);
+  },
+
+  upsertFromSync(table: Table): void {
     const db = getDB();
-    const id = uuidv4();
-    const now = Date.now();
+    const byNumber = tableService.getTableByNumber(table.number);
+    const id = byNumber?.id ?? table.id ?? stableTableId(table.number);
+    const row: Table = { ...table, id };
 
     try {
       db.execSync(`
-        INSERT INTO tables (id, number, capacity, status, created_at, updated_at)
-        VALUES ('${id}', ${number}, ${capacity}, 'AVAILABLE', ${now}, ${now})
+        INSERT OR REPLACE INTO tables (id, number, capacity, status, created_at, updated_at)
+        VALUES ('${id}', ${row.number}, ${row.capacity}, '${row.status}', ${row.created_at}, ${row.updated_at})
       `);
-
-      const table = {
-        id,
-        number,
-        capacity,
-        status: 'AVAILABLE' as TableStatus,
-        created_at: now,
-        updated_at: now,
-      };
-      pushLocalSync({ type: 'TABLE_SYNC', table });
-      return table;
     } catch (error) {
-      console.error('Erreur dans addTable:', error);
-      throw error;
+      console.warn('[sync] upsert table', row.number, error);
     }
   },
 
-  // Récupérer toutes les tables
+  addTable: (number: number, capacity: number): Table => {
+    if (tableService.tableNumberExists(number)) {
+      throw new Error(`La table numéro ${number} existe déjà`);
+    }
+
+    const db = getDB();
+    const id = stableTableId(number);
+    const now = Date.now();
+    const table: Table = {
+      id,
+      number,
+      capacity,
+      status: 'AVAILABLE',
+      created_at: now,
+      updated_at: now,
+    };
+
+    db.execSync(`
+      INSERT OR REPLACE INTO tables (id, number, capacity, status, created_at, updated_at)
+      VALUES ('${id}', ${number}, ${capacity}, 'AVAILABLE', ${now}, ${now})
+    `);
+    pushLocalSync({ type: 'TABLE_SYNC', table });
+    return table;
+  },
+
   getAllTables: (): Table[] => {
     const db = getDB();
     try {
@@ -47,7 +65,10 @@ export const tableService = {
     }
   },
 
-  // Récupérer une table par ID
+  getTableByNumber: (number: number): Table | null => {
+    return tableService.getTableById(stableTableId(number));
+  },
+
   getTableById: (id: string): Table | null => {
     const db = getDB();
     try {
@@ -62,7 +83,6 @@ export const tableService = {
     }
   },
 
-  // Mettre à jour le statut d'une table
   updateTableStatus: (id: string, status: TableStatus): void => {
     const db = getDB();
     const now = Date.now();
@@ -77,26 +97,15 @@ export const tableService = {
     }
   },
 
-  // Supprimer une table
   deleteTable: (id: string): void => {
     const db = getDB();
     db.execSync(`DELETE FROM tables WHERE id = '${id}'`);
     pushLocalSync({ type: 'TABLE_DELETE', id });
   },
 
-  // Vérifier si un numéro de table existe déjà
   tableNumberExists: (number: number, excludeId?: string): boolean => {
-    const db = getDB();
-    let query = 'SELECT COUNT(*) as count FROM tables WHERE number = ?';
-    const params: (string | number)[] = [number];
-    
-    if (excludeId) {
-      query += ' AND id != ?';
-      params.push(excludeId);
-    }
-    
-    const result = db.getFirstSync<{ count: number }>(query, params);
-    return (result?.count || 0) > 0;
+    const canonical = stableTableId(number);
+    if (excludeId && excludeId === canonical) return false;
+    return tableService.getTableByNumber(number) !== null;
   },
 };
-

@@ -32,6 +32,7 @@ import { initDB } from './db/database';
 import HomeScreen from './screens/HomeScreen';
 import { connectSyncService } from './services/syncService';
 import { initSoundService } from './services/soundService';
+import { initDevicePhysicalId } from './utils/devicePhysicalId';
 
 export default function App() {
   const [dbReady, setDbReady] = useState(false);
@@ -40,6 +41,7 @@ export default function App() {
   useEffect(() => {
     const initialize = async () => {
       try {
+        await initDevicePhysicalId();
         await initDB();
         await initSoundService();
         await connectSyncService();

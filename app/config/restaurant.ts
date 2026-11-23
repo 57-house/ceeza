@@ -8,4 +8,4 @@ export const RESTAURANT_INFO = {
 };
 
 /** TVA restauration (10 %) — modifiable selon votre régime */
-export const DEFAULT_TVA_RATE = 0.1;
+export const DEFAULT_TVA_RATE = 0.0;

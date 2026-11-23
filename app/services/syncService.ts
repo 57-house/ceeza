@@ -1,6 +1,6 @@
 import 'react-native-get-random-values';
 import { Platform } from 'react-native';
-import { v4 as uuidv4 } from 'uuid';
+import { getDevicePhysicalId } from '../utils/devicePhysicalId';
 import { getDevWebSocketUrl } from '../config/network';
 import { registerSyncBroadcaster, pushLocalSync } from '../sync/syncBridge';
 import { applySyncMessage, isApplyingRemoteSync } from '../sync/syncApply';
@@ -19,7 +19,7 @@ const SNAPSHOT_PUBLISH_DEBOUNCE_MS = 4000;
 let deviceId: string | null = null;
 
 function getDeviceId(): string {
-  if (!deviceId) deviceId = uuidv4();
+  if (!deviceId) deviceId = getDevicePhysicalId();
   return deviceId;
 }
 let isMasterMode = false;

@@ -67,6 +67,14 @@ export default function DailySupplyScreen() {
     loadSupplyItems();
   });
 
+  const handleCloseModal = () => {
+    setModalVisible(false);
+    setSelectedItem(null);
+    setQuantity('');
+    setCost('');
+    Keyboard.dismiss();
+  };
+
   const handleOpenModal = () => {
     setSelectedItem(null);
     setQuantity('');
@@ -111,10 +119,7 @@ export default function DailySupplyScreen() {
         costValue
       );
       loadOrderForDate(selectedDate);
-      setModalVisible(false);
-      setSelectedItem(null);
-      setQuantity('');
-      setCost('');
+      handleCloseModal();
       Alert.alert('Succès', 'Article ajouté à l\'approvisionnement');
     } catch (error) {
       console.error('Erreur lors de l\'ajout:', error);
@@ -330,16 +335,25 @@ export default function DailySupplyScreen() {
 
       <Modal
         animationType="slide"
-        transparent={true}
+        transparent
         visible={modalVisible}
-        onRequestClose={() => setModalVisible(false)}
+        onRequestClose={handleCloseModal}
       >
-        <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+        <TouchableWithoutFeedback onPress={handleCloseModal}>
           <View style={styles.modalOverlay}>
             <TouchableWithoutFeedback onPress={() => {}}>
               <View style={styles.modalContent}>
                 <ScrollView showsVerticalScrollIndicator={false}>
-              <Text style={styles.modalTitle}>Ajouter un article</Text>
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>Ajouter un article</Text>
+                <TouchableOpacity
+                  style={styles.modalCloseButton}
+                  onPress={handleCloseModal}
+                  hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                >
+                  <Text style={styles.modalCloseText}>✕</Text>
+                </TouchableOpacity>
+              </View>
 
               {!selectedItem ? (
                 <>
@@ -357,6 +371,14 @@ export default function DailySupplyScreen() {
                         </Text>
                       </TouchableOpacity>
                     ))}
+                  </View>
+                  <View style={styles.modalButtons}>
+                    <TouchableOpacity
+                      style={[styles.modalButton, styles.cancelButton]}
+                      onPress={handleCloseModal}
+                    >
+                      <Text style={styles.cancelButtonText}>Annuler</Text>
+                    </TouchableOpacity>
                   </View>
                 </>
               ) : (
@@ -392,7 +414,7 @@ export default function DailySupplyScreen() {
                   <View style={styles.modalButtons}>
                     <TouchableOpacity
                       style={[styles.modalButton, styles.cancelButton]}
-                      onPress={() => setModalVisible(false)}
+                      onPress={handleCloseModal}
                     >
                       <Text style={styles.cancelButtonText}>Annuler</Text>
                     </TouchableOpacity>
@@ -738,11 +760,31 @@ const styles = StyleSheet.create({
     maxWidth: 500,
     maxHeight: '90%',
   },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 20,
+  },
   modalTitle: {
+    flex: 1,
     fontSize: 22,
     fontWeight: 'bold',
-    marginBottom: 20,
     color: '#333',
+  },
+  modalCloseButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#f0f0f0',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: 12,
+  },
+  modalCloseText: {
+    fontSize: 16,
+    color: '#666',
+    fontWeight: '600',
   },
   label: {
     fontSize: 14,

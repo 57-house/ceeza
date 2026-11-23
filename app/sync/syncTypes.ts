@@ -29,6 +29,7 @@ export type SyncMessage =
   | { type: 'ORDER_DELETE'; id: string }
   | { type: 'INVOICE_SYNC'; invoice: Invoice }
   | { type: 'INVOICE_PAID'; invoice: Invoice }
+  | { type: 'INVOICE_DELETE'; id: string }
   | { type: 'SUPPLY_ITEM_SYNC'; item: SupplyItem }
   | { type: 'SUPPLY_ITEM_DELETE'; id: string }
   | { type: 'SUPPLY_ORDER_SYNC'; order: SupplyOrder }
